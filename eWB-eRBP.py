@@ -73,7 +73,7 @@ class eRBP(object):
         self.lam_hh = torch.zeros(n_h2, n_h1, device=device)
         self.lam_oh = torch.zeros(n_o, n_h2, device=device)
               
-    def forward(self, x, T=200):
+    def forward(self, x, y, T=200):
         rf_i = sp_i = torch.zeros(n_i, 1, device=device)
         rf_h1= I_h1 = ud_h1 = us_h1 = sp_h1 = torch.zeros(n_h1, 1, device=device)
         rf_h2 = I_h2 = ud_h2 = us_h2 = sp_h2 = torch.zeros(n_h2, 1, device=device)
@@ -90,7 +90,7 @@ class eRBP(object):
             
             rf_h1, I_h1, us_h1, sp_h1 = LIF(self.w_hi, sp_i, rf_h1, I_h1, us_h1, sp_h1)
             rf_h2, I_h2, us_h2, sp_h2 = LIF(self.w_hh, sp_h1, rf_h2, I_h2, us_h2, sp_h2)
-            rf_o, I_o, us_o, sp_o = LIF(self.w_oh, sp_h2, rf_h2, I_h2, us_h2, sp_h2)
+            rf_o, I_o, us_o, sp_o = LIF(self.w_oh, sp_h2, rf_o, I_o, us_o, sp_o)
             
             ### Error neuron
             us_e1 += w_E * (sp_o - sp_l)
@@ -133,8 +133,8 @@ class eRBP(object):
             F.relu(rf_i, inplace=True)
             
             rf_h1, I_h1, us_h1, sp_h1 = LIF(self.w_hi.unsqueeze(0).expand(1, n_h1, n_i), sp_i, rf_h1, I_h1, us_h1, sp_h1)
-            rf_h2, I_h2, us_h2, sp_h2 = LIF(self.w_hh.w_hh.unsqueeze(0).expand(1, n_h2, n_h1), sp_h1, rf_h2, I_h2, us_h2, sp_h2)
-            rf_o, I_o, us_o, sp_o = LIF(self.w_oh.w_oh.unsqueeze(0).expand(1, n_o, n_h2), sp_h2, rf_h2, I_h2, us_h2, sp_h2)
+            rf_h2, I_h2, us_h2, sp_h2 = LIF(self.w_hh.unsqueeze(0).expand(1, n_h2, n_h1), sp_h1, rf_h2, I_h2, us_h2, sp_h2)
+            rf_o, I_o, us_o, sp_o = LIF(self.w_oh.unsqueeze(0).expand(1, n_o, n_h2), sp_h2, rf_o, I_o, us_o, sp_o)
         
         return sp_o
 
@@ -160,16 +160,15 @@ for epo in range(epoch):
         x = x_train[:, itr] * dt
         y = torch.cuda.FloatTensor(n_o).fill_(0)
         y[y_train[itr]] = 1/ref2 * dt        
-        rand_mat = torch.cuda.FloatTensor(T, n_i).uniform_()
 
-        model.forward(x)  
+        model.forward(x, y)  
 
         if np.mod(itr, acc_step) == 0:         
             spike_count = torch.cuda.FloatTensor(n_test, n_o, 1).fill_(0)
 
-            for t_itr in range(int(n_test/batch)):
-                x = x_test[t_itr * batch:t_itr * batch + batch, :] * dt
-                spike_count[t_itr * batch:t_itr * batch + batch, :, :] += model.test_step(x)
+            for itr in range(int(n_test/batch)):
+                x = x_test[itr * batch:itr * batch + batch, :] * dt
+                spike_count[itr * batch:itr * batch + batch, :, :] += model.test_step(x)
             
             count = np.sum(y_test[0:n_test].reshape(-1,1) - spike_count.cpu().numpy().argmax(axis=1) == 0)
 
