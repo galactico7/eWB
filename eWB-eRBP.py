@@ -122,7 +122,7 @@ class eWB(object):
         rf_i = sp_i = torch.zeros(batch, n_i, 1, device=device)
         rf_h1= I_h1 = us_h1 = sp_h1 = torch.zeros(batch, n_h1, 1, device=device)
         rf_h2 = I_h2 = us_h2 = sp_h2 = torch.zeros(batch, n_h2, 1, device=device)
-        rf_o = I_o = us_o = sp_o = torch.zeros(batch, n_o, 1, device=device)       
+        rf_o = I_o = us_o = sp_o = sp_sum = torch.zeros(batch, n_o, 1, device=device)       
 
         for t in range(T):          
             sp_i[:, :, 0] = (x > torch.cuda.FloatTensor(batch, n_i).uniform_()).float()
@@ -134,8 +134,8 @@ class eWB(object):
             rf_h1, I_h1, us_h1, sp_h1 = LIF(self.w_hi.unsqueeze(0).expand(1, n_h1, n_i), sp_i, rf_h1, I_h1, us_h1, sp_h1)
             rf_h2, I_h2, us_h2, sp_h2 = LIF(self.w_hh.unsqueeze(0).expand(1, n_h2, n_h1), sp_h1, rf_h2, I_h2, us_h2, sp_h2)
             rf_o, I_o, us_o, sp_o = LIF(self.w_oh.unsqueeze(0).expand(1, n_o, n_h2), sp_h2, rf_o, I_o, us_o, sp_o)
-        
-        return sp_o
+            sp_sum += sp_o
+        return sp_sum
 
 # the data, split between train and test sets
 (x_train, y_train), (x_test, y_test) = mnist.load_data()
