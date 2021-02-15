@@ -13,13 +13,8 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 ## Network simulation:
 dt = 1e-3
 T = 200
-ref2 = 4e-3
+ref = 4e-3
 batch = 500
-n_i, n_h1, n_h2, n_o, n_e1, n_e2, n_l = 784, 1000, 1000, 10, 10, 10, 10
-dt=1e-3
-tau_syn, tau_s, tau_d = 4e-3, 1e-3, 5e-3
-decay_syn, decay_s, decay_d = np.exp(-dt/tau_syn), np.exp(-dt/tau_s), np.exp(-dt/tau_d)
-ref1 = 4e-3
 usth = 1.1
 bmin1 = -25
 bmax1 = 25
@@ -28,6 +23,10 @@ bmax2 = 25
 w_E = 1
 p = 0.45
 rl = 0.0002
+n_i, n_h1, n_h2, n_o, n_e1, n_e2, n_l = 784, 1000, 1000, 10, 10, 10, 10
+tau_syn, tau_s, tau_d = 4e-3, 1e-3, 5e-3
+decay_syn, decay_s, decay_d = np.exp(-dt/tau_syn), np.exp(-dt/tau_s), np.exp(-dt/tau_d)
+
 zero = torch.zeros(1, device=device)
 one = torch.ones(1, device=device)
 
@@ -38,7 +37,7 @@ def LIF(weight, x, rf, I, us, sp):
     us = torch.where(rf>0., zero, us + I)
     sp = (us >= usth).float()
     us *= 1. - sp
-    rf += sp * ref2  
+    rf += sp * ref 
     rf -= dt
     F.relu(rf, inplace=True)
     
@@ -51,9 +50,9 @@ def binary_score(Data):
     score = torch.mean((1 - torch.abs(Data)) ** 2).item()
     return score
 
-class eRBP(object):    
+class eWB(object):    
     def __init__(self):
-        super(eRBP, self).__init__()
+        super(eWB, self).__init__()
         self.w_hi = torch.empty(n_h1, n_i, device=device)
         self.w_hh = torch.empty(n_h2, n_h1, device=device)
         self.w_oh = torch.empty(n_o, n_h2, device=device)
@@ -73,7 +72,7 @@ class eRBP(object):
         self.lam_hh = torch.zeros(n_h2, n_h1, device=device)
         self.lam_oh = torch.zeros(n_o, n_h2, device=device)
               
-    def forward(self, x, y, T=200):
+    def train(self, x, y, T=200):
         rf_i = sp_i = torch.zeros(n_i, 1, device=device)
         rf_h1= I_h1 = ud_h1 = us_h1 = sp_h1 = torch.zeros(n_h1, 1, device=device)
         rf_h2 = I_h2 = ud_h2 = us_h2 = sp_h2 = torch.zeros(n_h2, 1, device=device)
@@ -84,7 +83,7 @@ class eRBP(object):
             sp_i[:, 0] = (x > torch.cuda.FloatTensor(n_i).uniform_()).float()
             sp_l[:, 0] = (y > torch.cuda.FloatTensor(n_o).uniform_()).float()
             sp_i = torch.where(rf_i>0., zero, sp_i)
-            rf_i += sp_i * ref1
+            rf_i += sp_i * ref
             rf_i -= dt
             F.relu(rf_i, inplace=True)
             
@@ -119,7 +118,7 @@ class eRBP(object):
             self.lam_hh += 0.2 * rl * torch.abs(1. - self.w_hh ** 2) * Boxcar(I_h2, bmax2, bmin2) * sp_h1.transpose(0, 1)
             self.lam_oh += 0.2 * rl * torch.abs(1. - self.w_oh ** 2) * Boxcar(I_o, bmax1, bmin1) * sp_h2.transpose(0, 1)
 
-    def test_step(self, x, T=200):
+    def test(self, x, T=200):
         rf_i = sp_i = torch.zeros(batch, n_i, 1, device=device)
         rf_h1= I_h1 = us_h1 = sp_h1 = torch.zeros(batch, n_h1, 1, device=device)
         rf_h2 = I_h2 = us_h2 = sp_h2 = torch.zeros(batch, n_h2, 1, device=device)
@@ -128,7 +127,7 @@ class eRBP(object):
         for t in range(T):          
             sp_i[:, :, 0] = (x > torch.cuda.FloatTensor(batch, n_i).uniform_()).float()
             sp_i = torch.where(rf_i>0., zero, sp_i)
-            rf_i += sp_i * ref1
+            rf_i += sp_i * ref
             rf_i -= dt
             F.relu(rf_i, inplace=True)
             
@@ -143,7 +142,7 @@ class eRBP(object):
 x_train = torch.from_numpy(x_train.reshape(60000, 784).transpose()).float().cuda() + 10
 x_test = torch.from_numpy(x_test.reshape(10000, 784)).float().cuda() + 10
 
-model = eRBP()
+model = eWB()
 
 start = time.time()
 print('@@@@@ start @@@@@')
@@ -159,16 +158,16 @@ for epo in range(epoch):
     for itr in range(n_train):
         x = x_train[:, itr] * dt
         y = torch.cuda.FloatTensor(n_o).fill_(0)
-        y[y_train[itr]] = 1/ref2 * dt        
+        y[y_train[itr]] = 1/ref * dt        
 
-        model.forward(x, y)  
+        model.train(x, y)  
 
         if np.mod(itr, acc_step) == 0:         
             spike_count = torch.cuda.FloatTensor(n_test, n_o, 1).fill_(0)
 
-            for itr in range(int(n_test/batch)):
-                x = x_test[itr * batch:itr * batch + batch, :] * dt
-                spike_count[itr * batch:itr * batch + batch, :, :] += model.test_step(x)
+            for itr2 in range(int(n_test/batch)):
+                x = x_test[itr2 * batch:itr2 * batch + batch, :] * dt
+                spike_count[itr2 * batch:itr2 * batch + batch, :, :] += model.test(x)
             
             count = np.sum(y_test[0:n_test].reshape(-1,1) - spike_count.cpu().numpy().argmax(axis=1) == 0)
 
