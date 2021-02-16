@@ -148,7 +148,7 @@ model = eWB()
 start = time.time()
 print('@@@@@ start @@@@@')
 ### Learning
-n_train, n_test, epoch, acc_step, batch = 60000, 10000, 25, 200, 500
+n_train, n_test, epoch, acc_step, batch = 60000, 10000, 25, 10000, 500
 step = []
 accuracy = []
 bi_score_w_hi = []
